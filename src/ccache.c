@@ -17,8 +17,10 @@
 typedef struct cache_page {
     off_t offset;               
     void *data;                 
+    bool dirty;             
     struct cache_page *prev, *next;
 } cache_page_t;
+
 
 typedef struct cache {
     cache_page_t *head;         
@@ -61,32 +63,44 @@ static void cache_destroy(cache_t *cache) {
 }
 
 static void cache_promote(cache_t *cache, cache_page_t *page) {
-    if (cache->head == page) return; 
+    if (cache->head == page) return; // Уже на вершине
 
     if (page->prev) page->prev->next = page->next;
     if (page->next) page->next->prev = page->prev;
-    if (cache->tail == page) cache->tail = page->prev;
+    if (cache->tail == page) cache->tail = page->prev; // Если это хвост
 
     page->prev = NULL;
     page->next = cache->head;
     if (cache->head) cache->head->prev = page;
     cache->head = page;
-    if (!cache->tail) cache->tail = page;
+
+    if (!cache->tail) cache->tail = page;  // Если список был пуст
 }
+
 
 static void cache_evict(cache_t *cache) {
-    if (!cache->head) return; 
+    if (!cache->head) return;  
 
-    cache_page_t *evicted = cache->head;
-    if (evicted->next) evicted->next->prev = NULL;
+    cache_page_t *evicted = cache->head; 
+
+    if (evicted->dirty) {
+        pwrite(fd_table[0].fd, evicted->data, cache->block_size, evicted->offset);
+    }
+
+    if (evicted->next) {
+        evicted->next->prev = NULL;
+    }
     cache->head = evicted->next;
 
-    if (cache->tail == evicted) cache->tail = NULL;  
+    if (!cache->head) {
+        cache->tail = NULL; 
+    }
 
-    free(evicted->data);  
-    free(evicted);       
-    cache->size--;        
+    free(evicted->data);
+    free(evicted);
+    cache->size--;
 }
+
 
 
 int lab2_open(const char *path) {
@@ -113,8 +127,19 @@ int lab2_open(const char *path) {
 int lab2_close(int fd) {
     if (fd < 0 || fd >= MAX_OPEN_FILES || fd_table[fd].fd == 0) return -1;
 
-    close(fd_table[fd].fd);
-    cache_destroy(fd_table[fd].cache);
+    file_descriptor_t *file = &fd_table[fd];
+    cache_t *cache = file->cache;
+
+    cache_page_t *page = cache->head;
+    while (page) {
+        if (page->dirty) {
+            pwrite(file->fd, page->data, cache->block_size, page->offset);
+        }
+        page = page->next;
+    }
+
+    close(file->fd);
+    cache_destroy(cache);
     fd_table[fd].fd = 0;
     return 0;
 }
@@ -133,7 +158,7 @@ ssize_t lab2_read(int fd, void *buf, size_t count) {
     while (page) {
         if (page->offset == block_offset) {
             cache_promote(cache, page);
-            size_t to_copy = count > block_size - block_index ? block_size - block_index : count;
+            size_t to_copy = (count > block_size - block_index) ? block_size - block_index : count;
             memcpy(buf, page->data + block_index, to_copy);
             file->offset += to_copy;
             return to_copy;
@@ -145,20 +170,26 @@ ssize_t lab2_read(int fd, void *buf, size_t count) {
     page = (cache_page_t *)malloc(sizeof(cache_page_t));
     if (!page) return -1;
 
-    page->data = aligned_alloc(block_size, block_size);
-    if (!page->data) {
+    if (posix_memalign(&page->data, block_size, block_size) != 0) {
         free(page);
         return -1;
     }
 
     ssize_t read_bytes = pread(file->fd, page->data, block_size, block_offset);
-    if (read_bytes <= 0) {
+    if (read_bytes < 0) {
         free(page->data);
         free(page);
-        return read_bytes;
+        return -1;
+    }
+
+    if (read_bytes == 0) {  // Конец файла
+        free(page->data);
+        free(page);
+        return 0;
     }
 
     page->offset = block_offset;
+    page->dirty = false;
     page->prev = NULL;
     page->next = cache->head;
     if (cache->head) cache->head->prev = page;
@@ -167,7 +198,7 @@ ssize_t lab2_read(int fd, void *buf, size_t count) {
 
     cache->size++;
 
-    size_t to_copy = count > read_bytes - block_index ? read_bytes - block_index : count;
+    size_t to_copy = (count > read_bytes - block_index) ? read_bytes - block_index : count;
     memcpy(buf, page->data + block_index, to_copy);
     file->offset += to_copy;
     return to_copy;
@@ -202,16 +233,21 @@ ssize_t lab2_write(int fd, const void *buf, size_t count) {
             page = (cache_page_t *)malloc(sizeof(cache_page_t));
             if (!page) return -1;
 
-            page->data = aligned_alloc(block_size, block_size);
-            if (!page->data) {
+            if (posix_memalign(&page->data, block_size, block_size) != 0) {
                 free(page);
                 return -1;
             }
 
             memset(page->data, 0, block_size);
-            pread(file->fd, page->data, block_size, block_offset);
+            ssize_t read_bytes = pread(file->fd, page->data, block_size, block_offset);
+            if (read_bytes < 0) {
+                free(page->data);
+                free(page);
+                return read_bytes;
+            }
 
             page->offset = block_offset;
+            page->dirty = false;
             page->prev = NULL;
             page->next = cache->head;
             if (cache->head) cache->head->prev = page;
@@ -225,12 +261,7 @@ ssize_t lab2_write(int fd, const void *buf, size_t count) {
 
         size_t to_copy = (count > block_size - block_index) ? block_size - block_index : count;
         memcpy((char *)page->data + block_index, buf, to_copy);
-
-        ssize_t written = pwrite(file->fd, page->data, block_size, block_offset);
-        if (written < 0) {
-            perror("pwrite failed");
-            return -1;
-        }
+        page->dirty = true; // Устанавливаем dirty только после изменения данных
 
         buf = (const char *)buf + to_copy;
         count -= to_copy;
@@ -244,15 +275,25 @@ ssize_t lab2_write(int fd, const void *buf, size_t count) {
     return bytes_written;
 }
 
-
 off_t lab2_lseek(int fd, off_t offset, int whence) {
     if (fd < 0 || fd >= MAX_OPEN_FILES || fd_table[fd].fd == 0) return -1;
 
     file_descriptor_t *file = &fd_table[fd];
-    if (whence == SEEK_SET) {
-        file->offset = offset;
-    } else {
-        return -1; 
+    switch (whence) {
+        case SEEK_SET:
+            file->offset = offset;
+            break;
+        case SEEK_CUR:
+            file->offset += offset;
+            break;
+        case SEEK_END: {
+            struct stat st;
+            if (fstat(file->fd, &st) < 0) return -1;
+            file->offset = st.st_size + offset;
+            break;
+        }
+        default:
+            return -1;
     }
     return file->offset;
 }
@@ -262,4 +303,3 @@ int lab2_fsync(int fd) {
 
     return fsync(fd_table[fd].fd);
 }
-

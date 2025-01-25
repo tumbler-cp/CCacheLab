@@ -5,7 +5,7 @@
 #include <fcntl.h>
 #include "ram_bench.h"
 
-#define FILE_SIZE 2048
+#define FILE_SIZE 256
 
 int main(int argc, char *argv[]) {
     if (argc != 4) {
@@ -38,6 +38,9 @@ int main(int argc, char *argv[]) {
       printf("File already exists and is of size %ld bytes.\n", file_size);
     }
 
+		int prec = count_in_file(file_name, target);
+		printf("Precontrol: %d \n", prec);
+
     clock_t start_time = clock();
 
     if (!replace_in_file(file_name, target, replacement)) {
@@ -45,10 +48,12 @@ int main(int argc, char *argv[]) {
     } else {
       printf("Target replaced\n");
     }
-
     clock_t end_time = clock();
     double duration = (double)(end_time - start_time) / CLOCKS_PER_SEC;
     printf("Execution time: %f seconds\n", duration);
+
+		int posc = count_in_file(file_name, target);
+		printf("Postcontrol: %d \n", posc);
 
     close(fd); 
     return EXIT_SUCCESS;

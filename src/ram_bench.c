@@ -1,5 +1,5 @@
 #define _GNU_SOURCE
-#define USE_CUSTOM_LIB
+//#define USE_CUSTOM_LIB
 
 #include "ram_bench.h"
 #ifdef USE_CUSTOM_LIB
@@ -32,6 +32,41 @@
 #define LSEEK(fd, offset, whence) lseek(fd, offset, whence)
 #define FSYNC(fd) fsync(fd)
 #endif
+
+int count_in_file(const char* file_name, int target) {
+    int fd = open(file_name, O_RDONLY);
+    if (fd < 0) {
+        perror("Error opening file");
+        return 0;
+    }
+
+    char buffer[CHUNK_SIZE];
+    int res = 0;
+
+    while (1) {
+        ssize_t bytes_read = read(fd, buffer, CHUNK_SIZE);
+        if (bytes_read < 0) {
+            perror("Error reading file");
+            close(fd);
+            return 0;
+        }
+        if (bytes_read == 0) {
+            break;
+        }
+
+        for (size_t i = 0; i + sizeof(int) <= (size_t)bytes_read; i += sizeof(int)) {
+            int val;
+            memcpy(&val, &buffer[i], sizeof(int));
+            if (val == target) {
+                res++;
+            }
+        }
+    }
+
+    close(fd);
+    return res;
+}
+
 
 int replace_in_file(const char *file_name, int target, int replacement) {
     int fd = OPEN(file_name, O_RDWR | O_DIRECT, 0644);
