@@ -1,39 +1,39 @@
-#define _GNU_SOURCE 
+#define _GNU_SOURCE
 
-#define BLOCK_SIZE 4096 
+#define BLOCK_SIZE 4096
 #define CACHE_COUNT 16
 
 #include "ccache.h"
+
 #include <fcntl.h>
-#include <unistd.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdio.h>
-#include <sys/types.h>
 #include <sys/stat.h>
-#include <stdint.h>
-#include <stdbool.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 typedef struct cache_page {
-    off_t offset;               
-    void *data;                 
-    bool dirty;             
+    off_t offset;
+    void *data;
+    bool dirty;
     struct cache_page *prev, *next;
 } cache_page_t;
 
-
 typedef struct cache {
-    cache_page_t *head;         
-    cache_page_t *tail;         
-    size_t capacity;            
-    size_t size;                
-    size_t block_size;          
+    cache_page_t *head;
+    cache_page_t *tail;
+    size_t capacity;
+    size_t size;
+    size_t block_size;
 } cache_t;
 
 typedef struct file_descriptor {
-    int fd;                     
-    off_t offset;               
-    cache_t *cache;             
+    int fd;
+    off_t offset;
+    cache_t *cache;
 } file_descriptor_t;
 
 #define MAX_OPEN_FILES 256
@@ -63,11 +63,11 @@ static void cache_destroy(cache_t *cache) {
 }
 
 static void cache_promote(cache_t *cache, cache_page_t *page) {
-    if (cache->head == page) return; // Уже на вершине
+    if (cache->head == page) return;  // Уже на вершине
 
     if (page->prev) page->prev->next = page->next;
     if (page->next) page->next->prev = page->prev;
-    if (cache->tail == page) cache->tail = page->prev; // Если это хвост
+    if (cache->tail == page) cache->tail = page->prev;  // Если это хвост
 
     page->prev = NULL;
     page->next = cache->head;
@@ -77,14 +77,14 @@ static void cache_promote(cache_t *cache, cache_page_t *page) {
     if (!cache->tail) cache->tail = page;  // Если список был пуст
 }
 
-
 static void cache_evict(cache_t *cache) {
-    if (!cache->head) return;  
+    if (!cache->head) return;
 
-    cache_page_t *evicted = cache->head; 
+    cache_page_t *evicted = cache->head;
 
     if (evicted->dirty) {
-        pwrite(fd_table[0].fd, evicted->data, cache->block_size, evicted->offset);
+        pwrite(fd_table[0].fd, evicted->data, cache->block_size,
+               evicted->offset);
     }
 
     if (evicted->next) {
@@ -93,15 +93,13 @@ static void cache_evict(cache_t *cache) {
     cache->head = evicted->next;
 
     if (!cache->head) {
-        cache->tail = NULL; 
+        cache->tail = NULL;
     }
 
     free(evicted->data);
     free(evicted);
     cache->size--;
 }
-
-
 
 int lab2_open(const char *path) {
     int fd = open(path, O_RDWR | O_DIRECT);
@@ -111,7 +109,7 @@ int lab2_open(const char *path) {
         if (fd_table[i].fd == 0) {
             fd_table[i].fd = fd;
             fd_table[i].offset = 0;
-            fd_table[i].cache = cache_init(CACHE_COUNT, BLOCK_SIZE); 
+            fd_table[i].cache = cache_init(CACHE_COUNT, BLOCK_SIZE);
             if (!fd_table[i].cache) {
                 close(fd);
                 return -1;
@@ -121,7 +119,7 @@ int lab2_open(const char *path) {
     }
 
     close(fd);
-    return -1; 
+    return -1;
 }
 
 int lab2_close(int fd) {
@@ -158,7 +156,9 @@ ssize_t lab2_read(int fd, void *buf, size_t count) {
     while (page) {
         if (page->offset == block_offset) {
             cache_promote(cache, page);
-            size_t to_copy = (count > block_size - block_index) ? block_size - block_index : count;
+            size_t to_copy = (count > block_size - block_index)
+                                 ? block_size - block_index
+                                 : count;
             memcpy(buf, page->data + block_index, to_copy);
             file->offset += to_copy;
             return to_copy;
@@ -198,7 +198,8 @@ ssize_t lab2_read(int fd, void *buf, size_t count) {
 
     cache->size++;
 
-    size_t to_copy = (count > read_bytes - block_index) ? read_bytes - block_index : count;
+    size_t to_copy =
+        (count > read_bytes - block_index) ? read_bytes - block_index : count;
     memcpy(buf, page->data + block_index, to_copy);
     file->offset += to_copy;
     return to_copy;
@@ -239,7 +240,8 @@ ssize_t lab2_write(int fd, const void *buf, size_t count) {
             }
 
             memset(page->data, 0, block_size);
-            ssize_t read_bytes = pread(file->fd, page->data, block_size, block_offset);
+            ssize_t read_bytes =
+                pread(file->fd, page->data, block_size, block_offset);
             if (read_bytes < 0) {
                 free(page->data);
                 free(page);
@@ -259,9 +261,12 @@ ssize_t lab2_write(int fd, const void *buf, size_t count) {
 
         cache_promote(cache, page);
 
-        size_t to_copy = (count > block_size - block_index) ? block_size - block_index : count;
+        size_t to_copy = (count > block_size - block_index)
+                             ? block_size - block_index
+                             : count;
         memcpy((char *)page->data + block_index, buf, to_copy);
-        page->dirty = true; // Устанавливаем dirty только после изменения данных
+        page->dirty =
+            true;  // Устанавливаем dirty только после изменения данных
 
         buf = (const char *)buf + to_copy;
         count -= to_copy;
