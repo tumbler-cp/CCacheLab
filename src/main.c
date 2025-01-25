@@ -5,37 +5,52 @@
 #include <fcntl.h>
 #include "ram_bench.h"
 
-
+#define FILE_SIZE 512
 
 int main(int argc, char *argv[]) {
     if (argc != 4) {
-        fprintf(stderr, "Usage: %s <file_name> <target> <replacement>\n", argv[0]);
-        return EXIT_FAILURE;
+      fprintf(stderr, "Usage: %s <file_name> <target> <replacement>\n", argv[0]);
+      return EXIT_FAILURE;
     }
 
     const char *file_name = argv[1];
     int target = atoi(argv[2]);
     int replacement = atoi(argv[3]);
 
-    int fd = open(file_name, O_RDONLY);
+    int fd = open(file_name, O_RDWR | O_CREAT, 0644);
     if (fd < 0) {
-        printf("File not found. Generating file of size 2048 MB...\n");
-        generate_file(file_name, 2048, 1);
+        perror("Error opening file");
+        return EXIT_FAILURE;
+    }
+
+    off_t file_size = lseek(fd, 0, SEEK_END);
+    if (file_size == 0) {
+			int fs = FILE_SIZE;
+      printf("File not found or is empty. Generating file of size %d MB...\n", fs);
+      generate_file(file_name, fs, 1); 
+      close(fd);
+      fd = open(file_name, O_RDWR, 0644);
+      if (fd < 0) {
+        perror("Error reopening file after generation");
+        return EXIT_FAILURE;
+      }
     } else {
-        close(fd);
+      printf("File already exists and is of size %ld bytes.\n", file_size);
     }
 
     clock_t start_time = clock();
 
     if (!replace_in_file(file_name, target, replacement)) {
-        fprintf(stderr, "Target not replaced\n");
+      fprintf(stderr, "Target not replaced\n");
     } else {
-        printf("Target replaced\n");
+      printf("Target replaced\n");
     }
 
     clock_t end_time = clock();
     double duration = (double)(end_time - start_time) / CLOCKS_PER_SEC;
     printf("Execution time: %f seconds\n", duration);
 
+    close(fd); 
     return EXIT_SUCCESS;
 }
+

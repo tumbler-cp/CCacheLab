@@ -1,5 +1,5 @@
 #define _GNU_SOURCE
-#define USE_CUSTOM_LIB
+//#define USE_CUSTOM_LIB
 
 #include "ram_bench.h"
 #ifdef USE_CUSTOM_LIB
@@ -80,14 +80,11 @@ int replace_in_file(const char *file_name, int target, int replacement) {
 
 void generate_file(const char *filename, size_t file_size_mb, int seed) {
     size_t total_bytes = file_size_mb * 1024 * 1024;
-    char buffer[CHUNK_SIZE];
+    int buffer[CHUNK_SIZE / sizeof(int)]; 
 
-    srand(seed);
-    for (size_t i = 0; i < CHUNK_SIZE; ++i) {
-        buffer[i] = (char)(rand() % 256);
-    }
+    srand(seed);  
 
-    int fd = OPEN(filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    int fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (fd < 0) {
         perror("Error opening file");
         exit(EXIT_FAILURE);
@@ -95,16 +92,22 @@ void generate_file(const char *filename, size_t file_size_mb, int seed) {
 
     size_t bytes_written = 0;
     while (bytes_written < total_bytes) {
-        size_t to_write = total_bytes - bytes_written < CHUNK_SIZE ? total_bytes - bytes_written : CHUNK_SIZE;
-        ssize_t written = WRITE(fd, buffer, to_write);
+        size_t to_write = total_bytes - bytes_written < sizeof(buffer) ? total_bytes - bytes_written : sizeof(buffer);
+
+        size_t num_ints_to_write = to_write / sizeof(int);
+        for (size_t i = 0; i < num_ints_to_write; ++i) {
+        	buffer[i] = rand() % 100;
+				}
+
+        ssize_t written = write(fd, buffer, to_write);
         if (written < 0) {
             perror("Error writing to file");
-            CLOSE(fd);
+            close(fd);
             exit(EXIT_FAILURE);
         }
         bytes_written += written;
     }
 
     printf("File %s of size %zu MB successfully generated.\n", filename, file_size_mb);
-    CLOSE(fd);
+    close(fd);
 }
