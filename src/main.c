@@ -5,7 +5,7 @@
 #include <fcntl.h>
 #include "ram_bench.h"
 
-#define FILE_SIZE 512
+#define FILE_SIZE 2048
 
 int main(int argc, char *argv[]) {
     if (argc != 4) {
