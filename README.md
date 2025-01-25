@@ -23,8 +23,6 @@ meson compile -C build
 | 1024mb   | 3.6131         | 1.8865        |
 | 2048mb   | 7.1145         | 3.6084        |
 
----
-
 ### Таблица 2: Без нахождения числа
 
 | Размер   | Без библиотеки | С библиотекой |
@@ -33,3 +31,4 @@ meson compile -C build
 | 1024mb   | 3.1449         | 2.108         |
 | 2048mb   | 6.3807         | 4.2178        |
 
+![alt text](https://github.com/tumbler-cp/CCacheLab/blob/main/asset/chart.png?raw=true)
