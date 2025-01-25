@@ -1,5 +1,5 @@
 #define _GNU_SOURCE
-//#define USE_CUSTOM_LIB
+#define USE_CUSTOM_LIB
 
 #include "ram_bench.h"
 #ifdef USE_CUSTOM_LIB

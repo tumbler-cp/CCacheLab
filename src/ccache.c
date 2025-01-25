@@ -75,18 +75,19 @@ static void cache_promote(cache_t *cache, cache_page_t *page) {
 }
 
 static void cache_evict(cache_t *cache) {
-    if (!cache->tail) return;
+    if (!cache->head) return; 
 
-    cache_page_t *evicted = cache->tail;
-    if (evicted->prev) evicted->prev->next = NULL;
-    cache->tail = evicted->prev;
+    cache_page_t *evicted = cache->head;
+    if (evicted->next) evicted->next->prev = NULL;
+    cache->head = evicted->next;
 
-    if (cache->head == evicted) cache->head = NULL;
+    if (cache->tail == evicted) cache->tail = NULL;  
 
-    free(evicted->data);
-    free(evicted);
-    cache->size--;
+    free(evicted->data);  
+    free(evicted);       
+    cache->size--;        
 }
+
 
 int lab2_open(const char *path) {
     int fd = open(path, O_RDWR | O_DIRECT);
